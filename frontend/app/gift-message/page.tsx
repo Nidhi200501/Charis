@@ -52,7 +52,10 @@ export default function GiftMessagePage() {
     try {
       const response = await fetch(`${API_URL}/api/gift-message`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: requestedMode, text: message, gift: context ? { id: context.gift.id, name: context.gift.name, meaning: context.gift.meaning, category: context.gift.category, price: context.gift.price } : {}, answers: context?.answers }) });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Unable to create message");
+      if (!response.ok) {
+        console.error("Gift message API rejected the request:", data);
+        throw new Error(data.detail || data.error || "Unable to create message");
+      }
       setMessage(data.message);
       setIsSaved(true);
     window.localStorage.setItem(accountStorageKey("gift_message"), data.message);

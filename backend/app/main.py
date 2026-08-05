@@ -481,6 +481,7 @@ async def concierge_events(request: ConciergeRequest):
     )
     endpoint = os.getenv("CHARIS_LLM_URL", "").replace("://localhost:", "://127.0.0.1:")
     streamed = False
+    streamed_text = ""
     if endpoint and not request.quick_reply:
         headers = {"Content-Type": "application/json"}
         if os.getenv("CHARIS_LLM_API_KEY"):
@@ -510,6 +511,7 @@ async def concierge_events(request: ConciergeRequest):
                         token = data.get("message", {}).get("content", "") or data.get("choices", [{}])[0].get("delta", {}).get("content", "")
                         if token:
                             streamed = True
+                            streamed_text += token
                             yield f"data: {json.dumps({'type': 'token', 'value': token})}\n\n"
         except httpx.HTTPStatusError as error:
             try:
@@ -525,12 +527,18 @@ async def concierge_events(request: ConciergeRequest):
         ai_reply = await model_reply({"mode": "concierge", "field": field, "message": message, "answers": answers}, max_tokens=60)
         if ai_reply:
             streamed = True
+            streamed_text = ai_reply.strip()
             yield f"data: {json.dumps({'type': 'token', 'value': ai_reply.strip()})}\n\n"
     if not streamed:
         yield f"data: {json.dumps({'type': 'token', 'value': fallback})}\n\n"
+        final_reply = fallback
     elif not ready:
-        yield f"data: {json.dumps({'type': 'token', 'value': ' ' + next_question(missing_field, answers)})}\n\n"
-    yield f"data: {json.dumps({'type': 'done', 'ready': ready, 'answers': answers, 'reply': fallback, 'nextField': missing_field, 'suggestions': [] if ready else SUGGESTIONS[missing_field], 'source': 'ai' if streamed else 'fallback'})}\n\n"
+        exact_question = next_question(missing_field, answers)
+        yield f"data: {json.dumps({'type': 'token', 'value': ' ' + exact_question})}\n\n"
+        final_reply = f"{streamed_text.strip()} {exact_question}".strip()
+    else:
+        final_reply = streamed_text.strip()
+    yield f"data: {json.dumps({'type': 'done', 'ready': ready, 'answers': answers, 'reply': final_reply, 'nextField': missing_field, 'suggestions': [] if ready else SUGGESTIONS[missing_field], 'source': 'ai' if streamed else 'fallback'})}\n\n"
 
 
 @app.post("/api/concierge/stream")

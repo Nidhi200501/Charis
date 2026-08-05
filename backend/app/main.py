@@ -480,6 +480,10 @@ async def concierge_events(request: ConciergeRequest):
             "keep_alive": "10m",
             "options": {"num_predict": 60, "temperature": 0.55, "top_p": 0.9},
         }
+        if "api.groq.com" in endpoint:
+            payload.pop("keep_alive", None)
+            payload.pop("options", None)
+            payload["max_tokens"] = 60
         try:
             async with httpx.AsyncClient(timeout=None) as client:
                 async with client.stream("POST", endpoint, headers=headers, json=payload) as response:
@@ -496,7 +500,8 @@ async def concierge_events(request: ConciergeRequest):
                             streamed = True
                             yield f"data: {json.dumps({'type': 'token', 'value': token})}\n\n"
         except httpx.HTTPStatusError as error:
-            logger.error("Streaming LLM request returned HTTP %s: %s", error.response.status_code, error.response.text[:500])
+            error_body = await error.response.aread()
+            logger.error("Streaming LLM request returned HTTP %s: %s", error.response.status_code, error_body[:500].decode("utf-8", errors="replace"))
             streamed = False
         except (httpx.HTTPError, json.JSONDecodeError, KeyError, TypeError) as error:
             logger.error("Streaming LLM request failed: %s", error)

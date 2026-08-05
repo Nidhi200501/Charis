@@ -120,7 +120,9 @@ class GiftMessageRequest(SecureModel):
     @field_validator("text", mode="before")
     @classmethod
     def clean_text(cls, value: str | None) -> str | None:
-        return sanitize_text(value, 5000) if value is not None else None
+        if value is None or not str(value).strip():
+            return ""
+        return sanitize_text(value, 5000)
 
     @field_validator("gift")
     @classmethod

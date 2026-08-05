@@ -54,21 +54,6 @@ export default function AuthPage() {
     }
   }
 
-  async function handleGoogleSignIn() {
-    setError("");
-    setIsLoading(true);
-    try {
-      const response = await fetch(`${API_URL}/api/auth/google`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "Google guest", email: "you@charis.example", provider: "google" }) });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || "Unable to authenticate with Google.");
-      completeSignIn(data);
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Unable to reach the CHARIS server.");
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
   return (
     <main className="auth-page">
       <a className="auth-back" href="/">← Back to CHARIS</a>
@@ -92,8 +77,6 @@ export default function AuthPage() {
           {error && <p className="auth-error" id="auth-error" role="alert">{error}</p>}
           <button className="auth-submit" type="submit" disabled={isLoading}>{isLoading ? "Opening your edit..." : mode === "signin" ? "Sign in with email" : "Create my account"}<span>↗</span></button>
         </form>
-        <div className="auth-divider"><span>or</span></div>
-        <button className="google-button" type="button" onClick={handleGoogleSignIn} disabled={isLoading}><b>G</b> Continue with Google</button>
         <p className="auth-note">Your account is stored in CHARIS PostgreSQL. This prototype keeps the session in your browser.</p>
       </section>
     </main>

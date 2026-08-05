@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import ThemeToggle from "./ThemeToggle";
+import AuthGate from "./AuthGate";
 
 export default function ThemeProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   useEffect(() => {
@@ -9,5 +10,5 @@ export default function ThemeProvider({ children }: Readonly<{ children: React.R
     document.documentElement.dataset.theme = savedTheme === "dark" ? "dark" : "light";
   }, []);
 
-  return <><ThemeToggle />{children}</>;
+  return <><ThemeToggle /><AuthGate>{children}</AuthGate></>;
 }

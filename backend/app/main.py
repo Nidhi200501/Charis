@@ -69,6 +69,29 @@ def sanitize_answers(value: dict[str, str]) -> dict[str, str]:
     return {key: sanitize_text(item, 300) for key, item in value.items()}
 
 
+def _build_llm_payload(endpoint: str, model_name: str, messages: list[dict[str, str]], stream: bool, max_tokens: int) -> dict[str, Any]:
+    """Build a request payload that works for Ollama or OpenAI-compatible providers."""
+    payload: dict[str, Any] = {"model": model_name, "messages": messages, "stream": stream}
+    if endpoint.endswith("/api/chat"):
+        # Ollama native API
+        payload["keep_alive"] = "10m"
+        payload["options"] = {"num_predict": max_tokens, "temperature": 0.55, "top_p": 0.9}
+    else:
+        # OpenAI-compatible API (Groq, Hugging Face, Cloudflare, OpenRouter, etc.)
+        if "api.groq.com" in endpoint:
+            payload["max_completion_tokens"] = max_tokens
+            if model_name.startswith("openai/gpt-oss"):
+                payload["include_reasoning"] = False
+            elif model_name.startswith("qwen/"):
+                payload["reasoning_effort"] = "none"
+                payload["reasoning_format"] = "hidden"
+        else:
+            payload["max_tokens"] = max_tokens
+        payload["temperature"] = 0.55
+        payload["top_p"] = 0.9
+    return payload
+
+
 class SecureModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -240,24 +263,16 @@ async def model_reply(context: Any, max_tokens: int = 80) -> str | None:
         "You are CHARIS, an elegant and emotionally intelligent luxury gifting concierge."
     )
     model_name = os.getenv("CHARIS_LLM_MODEL", "qwen2.5:3b")
-    payload = {
-        "model": model_name,
-        "messages": [
+    payload = _build_llm_payload(
+        endpoint,
+        model_name,
+        [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": str(context)},
         ],
-        "stream": False,
-        "keep_alive": "10m",
-        "options": {"num_predict": max_tokens, "temperature": 0.55, "top_p": 0.9},
-    }
-    if "api.groq.com" in endpoint:
-        payload.pop("keep_alive", None)
-        payload.pop("options", None)
-        payload["max_completion_tokens"] = max_tokens
-        if model_name.startswith("openai/gpt-oss"):
-            payload["include_reasoning"] = False
-        elif model_name.startswith("qwen/"):
-            payload["reasoning_format"] = "hidden"
+        stream=False,
+        max_tokens=max_tokens,
+    )
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(endpoint, headers=headers, json=payload)
@@ -470,25 +485,17 @@ async def concierge_events(request: ConciergeRequest):
         headers = {"Content-Type": "application/json"}
         if os.getenv("CHARIS_LLM_API_KEY"):
             headers["Authorization"] = f"Bearer {os.environ['CHARIS_LLM_API_KEY']}"
-        payload = {
-            "model": os.getenv("CHARIS_LLM_MODEL", "qwen2.5:3b"),
-            "messages": [
+        model_name = os.getenv("CHARIS_LLM_MODEL", "qwen2.5:3b")
+        payload = _build_llm_payload(
+            endpoint,
+            model_name,
+            [
                 {"role": "system", "content": "You are CHARIS, an elegant luxury gifting concierge. Reply in no more than 18 words. Start with a warm welcome and do not ask a question; the server will append the exact question." if request.start else "You are CHARIS, an elegant luxury gifting concierge. Reply in no more than 18 words. Acknowledge the answer only. Do not ask a question or recommend a product; the server will append the exact next question."},
                 {"role": "user", "content": json.dumps({"field": field, "message": message, "answers": answers})},
             ],
-            "stream": True,
-            "keep_alive": "10m",
-            "options": {"num_predict": 60, "temperature": 0.55, "top_p": 0.9},
-        }
-        if "api.groq.com" in endpoint:
-            payload.pop("keep_alive", None)
-            payload.pop("options", None)
-            payload["max_completion_tokens"] = 60
-            model_name = payload["model"]
-            if model_name.startswith("openai/gpt-oss"):
-                payload["include_reasoning"] = False
-            elif model_name.startswith("qwen/"):
-                payload["reasoning_format"] = "hidden"
+            stream=True,
+            max_tokens=60,
+        )
         try:
             async with httpx.AsyncClient(timeout=None) as client:
                 async with client.stream("POST", endpoint, headers=headers, json=payload) as response:

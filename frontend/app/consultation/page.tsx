@@ -80,7 +80,8 @@ export default function ConsultationPage() {
       if (cancelled) return;
       setSuggestions(result.suggestions || questions[0].options);
       setStep(0);
-    }).catch(() => {
+    }).catch((error) => {
+      console.error("Concierge stream failed:", error);
       if (!cancelled) setMessages([{ role: "assistant", text: "The AI concierge is temporarily unavailable. Please try again shortly." }]);
     }).finally(() => {
       if (!cancelled) setIsThinking(false);
@@ -113,7 +114,8 @@ export default function ConsultationPage() {
       const nextIndex = result.ready ? questions.length : questions.findIndex((item) => item.key === result.nextField);
       setStep(nextIndex >= 0 ? nextIndex : nextStep);
       if (result.ready) void saveConsultation(result.answers, [...messages, { role: "user", text: value }, { role: "assistant", text: conciergeReply }]);
-    } catch {
+    } catch (error) {
+      console.error("Concierge submission failed:", error);
       const errorMessage = "The AI concierge is temporarily unavailable. Please try again shortly.";
       setMessages((current) => current.map((item, index) => index === current.length - 1 ? { ...item, text: errorMessage } : item));
       setSuggestions([]);

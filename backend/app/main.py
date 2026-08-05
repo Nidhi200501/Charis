@@ -30,9 +30,11 @@ except ImportError:  # Database is optional while the prototype is being configu
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 app = FastAPI(title="CHARIS Backend", version="0.1.0")
+allowed_origins = os.getenv("FRONTEND_URL", "http://localhost:3000").split(",")
+allowed_origins = [origin.strip() for origin in allowed_origins if origin.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.getenv("FRONTEND_URL", "http://localhost:3000")],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -428,8 +430,6 @@ def list_gift_messages(user_id: int) -> list[dict[str, Any]]:
 
 @app.post("/api/concierge")
 async def concierge(request: ConciergeRequest) -> dict[str, Any]:
-    if not os.getenv("CHARIS_LLM_URL"):
-        raise HTTPException(status_code=503, detail="CHARIS_LLM_URL is not configured.")
     field = request.field if request.field in REQUIRED_FIELDS else "recipient"
     message = request.message.strip()
     answers = infer_context(message, field, request.answers)
@@ -437,8 +437,6 @@ async def concierge(request: ConciergeRequest) -> dict[str, Any]:
     ready = missing_field is None
     retrieved = retrieve_gifts(answers) if ready else []
     ai_reply = None if request.quick_reply else await model_reply({"mode": "concierge", "field": field, "message": message, "answers": answers, "retrieved_products": retrieved}, max_tokens=60)
-    if not request.quick_reply and os.getenv("CHARIS_LLM_URL") and not ai_reply:
-        raise HTTPException(status_code=502, detail="The configured open-source model is unavailable.")
     if ready:
         reply = ai_reply.strip() if ai_reply and len(ai_reply.strip()) < 420 else f"I have a clear sense of {answers.get('recipient', 'them')} now. This is enough to create a small, meaningful edit for the {answers.get('occasion', 'occasion')}."
         return {"ready": True, "answers": answers, "reply": reply, "nextField": None, "suggestions": [], "source": "ai" if ai_reply else "fallback"}
@@ -453,9 +451,6 @@ def recommendations(request: ConsultationCreate) -> dict[str, Any]:
 
 
 async def concierge_events(request: ConciergeRequest):
-    if not os.getenv("CHARIS_LLM_URL"):
-        yield f"data: {json.dumps({'type': 'error', 'message': 'CHARIS_LLM_URL is not configured.'})}\n\n"
-        return
     field = request.field
     message = request.message.strip()
     answers = {} if request.start else infer_context(message, field, request.answers)
@@ -502,16 +497,15 @@ async def concierge_events(request: ConciergeRequest):
                             streamed = True
                             yield f"data: {json.dumps({'type': 'token', 'value': token})}\n\n"
         except httpx.HTTPStatusError as error:
-            error_body = await error.response.aread()
+            try:
+                error_body = await error.response.aread()
+            except Exception:
+                error_body = b""
             logger.error("Streaming LLM request returned HTTP %s: %s", error.response.status_code, error_body[:500].decode("utf-8", errors="replace"))
             streamed = False
         except (httpx.HTTPError, json.JSONDecodeError, KeyError, TypeError) as error:
             logger.error("Streaming LLM request failed: %s", error)
             streamed = False
-            streamed = False
-    if endpoint and not request.quick_reply and not streamed:
-        yield f"data: {json.dumps({'type': 'error', 'message': 'The configured open-source model is unavailable.'})}\n\n"
-        return
     if not streamed:
         yield f"data: {json.dumps({'type': 'token', 'value': fallback})}\n\n"
     elif not ready:
@@ -526,8 +520,6 @@ async def stream_concierge(request: ConciergeRequest):
 
 @app.post("/api/gift-message")
 async def gift_message(request: GiftMessageRequest) -> dict[str, str]:
-    if not os.getenv("CHARIS_LLM_URL"):
-        raise HTTPException(status_code=503, detail="CHARIS_LLM_URL is not configured.")
     if request.mode == "improve" and (not request.text or not request.text.strip()):
         raise HTTPException(status_code=400, detail="Write a few words first, and I will help you shape them.")
     if request.mode == "improve":
@@ -535,8 +527,6 @@ async def gift_message(request: GiftMessageRequest) -> dict[str, str]:
     else:
         prompt = f"Write a warm, elegant gift message for {request.answers.get('recipient', 'someone special')}. The occasion is {request.answers.get('occasion', 'a meaningful moment')}. The gift is {request.gift.get('name', 'a thoughtful gift')}, symbolizing {request.gift.get('meaning', 'care and appreciation')}. Keep it under 80 words and do not use clichés. Return ONLY the final message text. Do not write 'Certainly', an introduction, an explanation, a label, quotation marks, or commentary."
     ai_message = await model_reply({"mode": "gift-message", "prompt": prompt}, max_tokens=160)
-    if os.getenv("CHARIS_LLM_URL") and not ai_message:
-        raise HTTPException(status_code=502, detail="The configured open-source model is unavailable.")
     fallback = f"{request.text.strip()}\n\nWith love, always." if request.mode == "improve" else f"For {request.answers.get('recipient', 'you')},\n\nOn {request.answers.get('occasion', 'this moment').lower()}, I wanted to give you something that felt as thoughtful and singular as you are. I hope {request.gift.get('name', 'this gift').lower()} reminds you that you are seen, appreciated, and deeply loved.\n\nWith all my love."
     message = clean_gift_message(ai_message) if ai_message else fallback
     return {"message": message, "source": "ai" if ai_message else "fallback"}

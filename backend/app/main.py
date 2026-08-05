@@ -282,6 +282,16 @@ def health() -> dict[str, str | bool]:
         return {"ok": True, "database": "not_connected"}
 
 
+@app.get("/health")
+def lightweight_health() -> dict[str, str | bool]:
+    return {"ok": True, "service": "charis-backend"}
+
+
+@app.get("/health")
+def liveness() -> dict[str, bool]:
+    return {"ok": True}
+
+
 @app.post("/api/auth/signup")
 def signup(request: AuthRequest) -> dict[str, str]:
     email = request.email.strip().lower()

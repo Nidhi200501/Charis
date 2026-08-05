@@ -8,32 +8,40 @@ type ConciergeResponse = { ready: boolean; reply: string; answers: Record<string
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 async function streamConcierge(body: object, onToken: (token: string) => void): Promise<ConciergeResponse> {
-  const response = await fetch(`${API_URL}/api/concierge/stream`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  if (!response.ok || !response.body) throw new Error("Concierge unavailable");
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let streamedText = "";
-  let result: ConciergeResponse | null = null;
-  while (true) {
-    const chunk = await reader.read();
-    if (chunk.done) break;
-    buffer += decoder.decode(chunk.value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
-    for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
-      const event = JSON.parse(line.slice(6)) as { type: "token" | "done" | "error"; value?: string; message?: string } & Partial<ConciergeResponse>;
-      if (event.type === "error") throw new Error(event.message || "The concierge is unavailable.");
-      if (event.type === "token" && event.value) {
-        streamedText += event.value;
-        onToken(event.value);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let streamedText = "";
+    try {
+      const response = await fetch(`${API_URL}/api/concierge/stream`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!response.ok || !response.body) throw new Error("Concierge unavailable");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let result: ConciergeResponse | null = null;
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        buffer += decoder.decode(chunk.value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const event = JSON.parse(line.slice(6)) as { type: "token" | "done" | "error"; value?: string; message?: string } & Partial<ConciergeResponse>;
+          if (event.type === "error") throw new Error(event.message || "The concierge is unavailable.");
+          if (event.type === "token" && event.value) {
+            streamedText += event.value;
+            onToken(event.value);
+          }
+          if (event.type === "done") result = event as unknown as ConciergeResponse;
+        }
       }
-      if (event.type === "done") result = event as unknown as ConciergeResponse;
+      if (!result) throw new Error("Concierge stream ended unexpectedly");
+      return { ...result, reply: result.reply };
+    } catch (error) {
+      if (attempt === 1 || streamedText) throw error;
+      await new Promise((resolve) => window.setTimeout(resolve, 900));
     }
   }
-  if (!result) throw new Error("Concierge stream ended unexpectedly");
-  return { ...result, reply: result.reply };
+  throw new Error("Concierge unavailable");
 }
 
 const questions = [

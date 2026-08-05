@@ -244,6 +244,10 @@ async def model_reply(context: Any, max_tokens: int = 80) -> str | None:
         "keep_alive": "10m",
         "options": {"num_predict": max_tokens, "temperature": 0.55, "top_p": 0.9},
     }
+    if "api.groq.com" in endpoint:
+        payload.pop("keep_alive", None)
+        payload.pop("options", None)
+        payload["max_tokens"] = max_tokens
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(endpoint, headers=headers, json=payload)
@@ -461,8 +465,11 @@ async def concierge_events(request: ConciergeRequest):
                     async for line in response.aiter_lines():
                         if not line:
                             continue
-                        data = json.loads(line)
-                        token = data.get("message", {}).get("content", "")
+                        raw_line = line[5:].strip() if line.startswith("data:") else line
+                        if raw_line == "[DONE]":
+                            continue
+                        data = json.loads(raw_line)
+                        token = data.get("message", {}).get("content", "") or data.get("choices", [{}])[0].get("delta", {}).get("content", "")
                         if token:
                             streamed = True
                             yield f"data: {json.dumps({'type': 'token', 'value': token})}\n\n"

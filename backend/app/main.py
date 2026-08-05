@@ -250,7 +250,8 @@ async def model_reply(context: Any, max_tokens: int = 80) -> str | None:
     if "api.groq.com" in endpoint:
         payload.pop("keep_alive", None)
         payload.pop("options", None)
-        payload["max_tokens"] = max_tokens
+        payload["max_completion_tokens"] = max_tokens
+        payload["include_reasoning"] = False
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(endpoint, headers=headers, json=payload)
@@ -483,7 +484,8 @@ async def concierge_events(request: ConciergeRequest):
         if "api.groq.com" in endpoint:
             payload.pop("keep_alive", None)
             payload.pop("options", None)
-            payload["max_tokens"] = 60
+            payload["max_completion_tokens"] = 60
+            payload["include_reasoning"] = False
         try:
             async with httpx.AsyncClient(timeout=None) as client:
                 async with client.stream("POST", endpoint, headers=headers, json=payload) as response:

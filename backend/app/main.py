@@ -287,6 +287,11 @@ def lightweight_health() -> dict[str, str | bool]:
     return {"ok": True, "service": "charis-backend"}
 
 
+@app.get("/")
+def root_status() -> dict[str, str | bool]:
+    return {"ok": True, "service": "charis-backend"}
+
+
 @app.get("/health")
 def liveness() -> dict[str, bool]:
     return {"ok": True}

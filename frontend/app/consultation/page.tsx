@@ -73,7 +73,7 @@ export default function ConsultationPage() {
       setSuggestions(result.suggestions || questions[0].options);
       setStep(0);
     }).catch(() => {
-      if (!cancelled) setMessages([{ role: "assistant", text: "I couldn't reach your AI concierge. Please check that Ollama is running, then refresh and try again." }]);
+      if (!cancelled) setMessages([{ role: "assistant", text: "The AI concierge is temporarily unavailable. Please try again shortly." }]);
     }).finally(() => {
       if (!cancelled) setIsThinking(false);
     });
@@ -106,7 +106,7 @@ export default function ConsultationPage() {
       setStep(nextIndex >= 0 ? nextIndex : nextStep);
       if (result.ready) void saveConsultation(result.answers, [...messages, { role: "user", text: value }, { role: "assistant", text: conciergeReply }]);
     } catch {
-      const errorMessage = "I couldn't reach your AI concierge. Please check that Ollama is running, then try again.";
+      const errorMessage = "The AI concierge is temporarily unavailable. Please try again shortly.";
       setMessages((current) => current.map((item, index) => index === current.length - 1 ? { ...item, text: errorMessage } : item));
       setSuggestions([]);
       setStep(step);

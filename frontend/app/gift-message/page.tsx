@@ -54,7 +54,8 @@ export default function GiftMessagePage() {
       const data = await response.json();
       if (!response.ok) {
         console.error("Gift message API rejected the request:", data);
-        throw new Error(data.detail || data.error || "Unable to create message");
+        const detail = Array.isArray(data.detail) ? data.detail.map((item: { msg?: string }) => item.msg || "Invalid request").join(" ") : data.detail || data.error || "Unable to create message";
+        throw new Error(detail);
       }
       setMessage(data.message);
       setIsSaved(true);

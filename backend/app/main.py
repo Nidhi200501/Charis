@@ -239,8 +239,9 @@ async def model_reply(context: Any, max_tokens: int = 80) -> str | None:
         if is_concierge else
         "You are CHARIS, an elegant and emotionally intelligent luxury gifting concierge."
     )
+    model_name = os.getenv("CHARIS_LLM_MODEL", "qwen2.5:3b")
     payload = {
-        "model": os.getenv("CHARIS_LLM_MODEL", "qwen2.5:3b"),
+        "model": model_name,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": str(context)},
@@ -253,7 +254,10 @@ async def model_reply(context: Any, max_tokens: int = 80) -> str | None:
         payload.pop("keep_alive", None)
         payload.pop("options", None)
         payload["max_completion_tokens"] = max_tokens
-        payload["include_reasoning"] = False
+        if model_name.startswith("openai/gpt-oss"):
+            payload["include_reasoning"] = False
+        elif model_name.startswith("qwen/"):
+            payload["reasoning_format"] = "hidden"
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(endpoint, headers=headers, json=payload)
@@ -480,7 +484,11 @@ async def concierge_events(request: ConciergeRequest):
             payload.pop("keep_alive", None)
             payload.pop("options", None)
             payload["max_completion_tokens"] = 60
-            payload["include_reasoning"] = False
+            model_name = payload["model"]
+            if model_name.startswith("openai/gpt-oss"):
+                payload["include_reasoning"] = False
+            elif model_name.startswith("qwen/"):
+                payload["reasoning_format"] = "hidden"
         try:
             async with httpx.AsyncClient(timeout=None) as client:
                 async with client.stream("POST", endpoint, headers=headers, json=payload) as response:
@@ -506,6 +514,11 @@ async def concierge_events(request: ConciergeRequest):
         except (httpx.HTTPError, json.JSONDecodeError, KeyError, TypeError) as error:
             logger.error("Streaming LLM request failed: %s", error)
             streamed = False
+    if endpoint and not request.quick_reply and not streamed:
+        ai_reply = await model_reply({"mode": "concierge", "field": field, "message": message, "answers": answers}, max_tokens=60)
+        if ai_reply:
+            streamed = True
+            yield f"data: {json.dumps({'type': 'token', 'value': ai_reply.strip()})}\n\n"
     if not streamed:
         yield f"data: {json.dumps({'type': 'token', 'value': fallback})}\n\n"
     elif not ready:

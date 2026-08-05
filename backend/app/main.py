@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import secrets
 import json
+import logging
 import re
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +17,8 @@ from fastapi.responses import StreamingResponse
 import bleach
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from .catalog import retrieve_gifts
+
+logger = logging.getLogger("charis.ai")
 
 try:
     import psycopg
@@ -254,7 +257,11 @@ async def model_reply(context: Any, max_tokens: int = 80) -> str | None:
             response.raise_for_status()
             data = response.json()
             return data.get("message", {}).get("content") or data.get("choices", [{}])[0].get("message", {}).get("content")
-    except (httpx.HTTPError, KeyError, IndexError, TypeError):
+    except httpx.HTTPStatusError as error:
+        logger.error("LLM request returned HTTP %s: %s", error.response.status_code, error.response.text[:500])
+        return None
+    except (httpx.HTTPError, KeyError, IndexError, TypeError) as error:
+        logger.error("LLM request failed: %s", error)
         return None
 
 
@@ -488,7 +495,12 @@ async def concierge_events(request: ConciergeRequest):
                         if token:
                             streamed = True
                             yield f"data: {json.dumps({'type': 'token', 'value': token})}\n\n"
-        except (httpx.HTTPError, json.JSONDecodeError, KeyError, TypeError):
+        except httpx.HTTPStatusError as error:
+            logger.error("Streaming LLM request returned HTTP %s: %s", error.response.status_code, error.response.text[:500])
+            streamed = False
+        except (httpx.HTTPError, json.JSONDecodeError, KeyError, TypeError) as error:
+            logger.error("Streaming LLM request failed: %s", error)
+            streamed = False
             streamed = False
     if endpoint and not request.quick_reply and not streamed:
         yield f"data: {json.dumps({'type': 'error', 'message': 'The configured open-source model is unavailable.'})}\n\n"
